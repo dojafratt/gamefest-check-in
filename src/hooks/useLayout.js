@@ -5,6 +5,13 @@ import { makeId } from '../utils/idGen'
 const LAYOUT_ID = 'main'
 const LS_KEY = 'lan-checkin:layout'
 
+// Fields we add to the stored JSON to identify our own writes when the
+// realtime echo comes back. They live inside `data` so no schema change
+// is needed; pre-existing layouts without these fields continue to load
+// unchanged.
+const META_WRITER = '_writer'
+const META_SEQ = '_writeSeq'
+
 export const DEFAULT_LAYOUT = {
   tables: [],
   nodes: [],
@@ -16,11 +23,18 @@ export const DEFAULT_LAYOUT = {
   gridSize: 1,
 }
 
+// Strip our realtime-tag fields so they never leak into app state / UI.
+function stripMeta(data) {
+  if (!data || typeof data !== 'object') return {}
+  const { [META_WRITER]: _w, [META_SEQ]: _s, ...rest } = data
+  return rest
+}
+
 export function useLayout() {
   const [layout, setLayout] = useState(() => {
     try {
       const raw = localStorage.getItem(LS_KEY)
-      if (raw) return { ...DEFAULT_LAYOUT, ...JSON.parse(raw) }
+      if (raw) return { ...DEFAULT_LAYOUT, ...stripMeta(JSON.parse(raw)) }
     } catch {}
     return DEFAULT_LAYOUT
   })
@@ -29,8 +43,16 @@ export function useLayout() {
   const pendingTimeout = useRef(null)
   const latest = useRef(layout)
   latest.current = layout
-  // Tracks the JSON we last pushed, so we can ignore echoes from realtime.
-  const lastPushed = useRef(null)
+
+  // Per-tab identity. This lets us recognize our own realtime echoes
+  // even when JSONB key reordering makes a byte-for-byte comparison
+  // unreliable.
+  const writerId = useRef(makeId('w')).current
+  const writeSeq = useRef(0)
+  // The highest sequence number we've sent out AND will ignore echoes
+  // for. When a newer local edit arrives during an in-flight write, the
+  // stale echo must still be suppressed — so we compare with `<=`.
+  const ignoredSeqMax = useRef(0)
 
   useEffect(() => {
     if (!supabaseConfigured || !supabase) return
@@ -46,7 +68,7 @@ export function useLayout() {
       if (error) {
         console.error('Layout load error:', error)
       } else if (data?.data) {
-        setLayout({ ...DEFAULT_LAYOUT, ...data.data })
+        setLayout({ ...DEFAULT_LAYOUT, ...stripMeta(data.data) })
       }
       setLoaded(true)
     })()
@@ -59,10 +81,15 @@ export function useLayout() {
         (payload) => {
           const incoming = payload.new?.data
           if (!incoming) return
-          const incomingStr = JSON.stringify(incoming)
-          // Ignore the echo of our own write.
-          if (lastPushed.current === incomingStr) return
-          setLayout({ ...DEFAULT_LAYOUT, ...incoming })
+          // Is this an echo of one of our own recent writes?
+          if (
+            incoming[META_WRITER] === writerId &&
+            typeof incoming[META_SEQ] === 'number' &&
+            incoming[META_SEQ] <= ignoredSeqMax.current
+          ) {
+            return
+          }
+          setLayout({ ...DEFAULT_LAYOUT, ...stripMeta(incoming) })
         }
       )
       .subscribe()
@@ -71,6 +98,7 @@ export function useLayout() {
       mounted = false
       supabase.removeChannel(channel)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const persist = useCallback((next) => {
@@ -84,14 +112,19 @@ export function useLayout() {
     if (pendingTimeout.current) clearTimeout(pendingTimeout.current)
     setSaving(true)
     pendingTimeout.current = setTimeout(async () => {
-      const payload = latest.current
-      lastPushed.current = JSON.stringify(payload)
+      const seq = ++writeSeq.current
+      ignoredSeqMax.current = seq
+      const tagged = {
+        ...stripMeta(latest.current),
+        [META_WRITER]: writerId,
+        [META_SEQ]: seq,
+      }
       try {
         const { error } = await supabase
           .from('layouts')
           .upsert({
             id: LAYOUT_ID,
-            data: payload,
+            data: tagged,
             updated_at: new Date().toISOString(),
           })
         if (error) console.error('Layout save error:', error)
@@ -99,7 +132,7 @@ export function useLayout() {
         setSaving(false)
       }
     }, 400)
-  }, [])
+  }, [writerId])
 
   const update = useCallback(
     (fn) => {

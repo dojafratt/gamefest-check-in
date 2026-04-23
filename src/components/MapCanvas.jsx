@@ -268,6 +268,10 @@ export default function MapCanvas({
                 transform={`translate(${n.x} ${n.y})`}
                 style={{ cursor: mode === 'edit' ? 'move' : 'pointer' }}
                 onPointerDown={(e) => {
+                  // Always stop propagation so the SVG background doesn't
+                  // start a pan or capture the pointer — without this, the
+                  // synthesized click never reaches the node in check-in mode.
+                  e.stopPropagation()
                   if (mode === 'edit') {
                     beginElementDrag(e, 'node', n.id, { x: n.x, y: n.y })
                   }
