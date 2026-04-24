@@ -27,6 +27,7 @@ html, body, #root {
   margin: 0;
   height: 100%;
   overflow: hidden;
+  overscroll-behavior: none;
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-display);
@@ -292,6 +293,8 @@ label {
   flex: 1;
   position: relative;
   overflow: hidden;
+  touch-action: none;
+  overscroll-behavior: contain;
   background:
     radial-gradient(1200px 800px at 50% 0%, rgba(124, 247, 198, 0.04), transparent 70%),
     var(--bg);
@@ -303,6 +306,7 @@ label {
   height: 100%;
   touch-action: none;
   user-select: none;
+  -webkit-user-select: none;
 }
 
 .canvas-hud {
