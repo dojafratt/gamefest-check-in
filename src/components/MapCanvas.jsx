@@ -370,13 +370,9 @@ export default function MapCanvas({
         }}
       >
         <defs>
-          <filter id="node-glow">
-            <feGaussianBlur stdDeviation="0.15" result="blur"/>
-            <feMerge>
-              <feMergeNode in="blur"/>
-              <feMergeNode in="SourceGraphic"/>
-            </feMerge>
-          </filter>
+          {/* No SVG filter here on purpose — feGaussianBlur leaves ghost
+              trails during rapid transforms on iOS Safari. The "glow" on
+              checked-in nodes is done with a second stroked ring below. */}
         </defs>
 
         <g transform={safeTransform}>
@@ -473,7 +469,6 @@ export default function MapCanvas({
                   stroke={selected ? 'var(--accent)' : color}
                   strokeWidth={selected ? 2.5 : 1.5}
                   vectorEffect="non-scaling-stroke"
-                  filter={checkedIn ? 'url(#node-glow)' : undefined}
                 />
                 <text
                   x={0}

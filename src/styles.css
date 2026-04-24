@@ -295,9 +295,9 @@ label {
   overflow: hidden;
   touch-action: none;
   overscroll-behavior: contain;
-  background:
-    radial-gradient(1200px 800px at 50% 0%, rgba(124, 247, 198, 0.04), transparent 70%),
-    var(--bg);
+  isolation: isolate;
+  contain: layout paint;
+  background: var(--bg);
 }
 
 .canvas-wrap svg {
@@ -307,6 +307,17 @@ label {
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
+  /* GPU layer promotion. Without this, iOS Safari leaves ghost trails
+     of the previous frame during rapid SVG transforms — the "outlines
+     remaining" bug. translateZ(0) + will-change forces the SVG onto its
+     own compositor layer where each frame overwrites the last cleanly. */
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  will-change: transform;
+  /* Opaque backdrop so partial invalidation still paints correctly. The
+     soft accent gradient moves to an inner <rect> inside the SVG where
+     it scrolls with the map. */
+  background: var(--bg);
 }
 
 .canvas-hud {
